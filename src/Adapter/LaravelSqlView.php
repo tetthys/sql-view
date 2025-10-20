@@ -13,9 +13,9 @@ use Tetthys\SqlView\Support\SqlHelper;
 
 /**
  * Laravel adapter for SQL views (PHP 8.3+).
- * - Uses base_path() to resolve SQL files.
+ * - Resolves SQL file with Laravel base_path() for relative paths.
  * - Auto-wires DB::unprepared() as executor.
- * - Provides Laravel-friendly helper methods.
+ * - Adds Laravel-friendly helper methods and debug utilities.
  */
 abstract class LaravelSqlView extends AbstractSqlView
 {
@@ -42,11 +42,28 @@ abstract class LaravelSqlView extends AbstractSqlView
         parent::refresh();
     }
 
-    /** Resolve SQL via base_path() and perform :param substitution (Laravel-aware). */
+    // ---------------------------------------------------------------------
+    // SQL loading (Laravel-aware)
+    // ---------------------------------------------------------------------
+
+    /** Get the resolved absolute path to the SQL file. */
+    public static function resolveSqlPath(): string
+    {
+        $file = static::SQL_FILE;
+
+        // Absolute path? (Unix / Windows drive / stream wrapper like phar://)
+        $isAbsolute = str_starts_with($file, '/')
+            || (strlen($file) > 1 && ctype_alpha($file[0]) && $file[1] === ':') // e.g. C:\...
+            || str_contains($file, '://');
+
+        return $isAbsolute ? $file : base_path($file);
+    }
+
+    /** Read SQL (after resolving path) and apply :param substitution. */
     #[\Override]
     protected static function sql(): string
     {
-        $path = base_path(static::SQL_FILE);
+        $path = static::resolveSqlPath();
 
         if (!is_file($path)) {
             throw new \RuntimeException("SQL file not found: {$path}");
@@ -57,7 +74,6 @@ abstract class LaravelSqlView extends AbstractSqlView
             throw new \RuntimeException("Failed to read SQL file: {$path}");
         }
 
-        // Naive :key => value substitution. Override if you need escaping/templating.
         foreach (static::$params as $key => $value) {
             $sql = str_replace(':' . $key, (string) $value, $sql);
         }
@@ -103,7 +119,7 @@ abstract class LaravelSqlView extends AbstractSqlView
     /** Dump resolved SQL content for inspection (after param substitution). */
     public static function dumpSql(): string
     {
-        $path = base_path(static::SQL_FILE);
+        $path = static::resolveSqlPath();
         if (!File::exists($path)) {
             return sprintf('-- SQL file not found: %s', $path);
         }
@@ -127,5 +143,31 @@ abstract class LaravelSqlView extends AbstractSqlView
     public static function count(): int
     {
         return (int) static::query()->count();
+    }
+
+    // ---------------------------------------------------------------------
+    // Debug helpers (for quick diagnosis in Tinker)
+    // ---------------------------------------------------------------------
+
+    /**
+     * Return useful debug info to diagnose "file not found" issues.
+     * Usage (Tinker):
+     *   >>> App\Support\SqlView\ProductCardView::debugInfo()
+     */
+    public static function debugInfo(): array
+    {
+        $resolved = static::resolveSqlPath();
+
+        return [
+            'class'           => static::class,
+            'name'            => static::name(),
+            'SQL_FILE_raw'    => static::SQL_FILE,
+            'resolved_path'   => $resolved,
+            'exists'          => file_exists($resolved),
+            'is_file'         => is_file($resolved),
+            'cwd'             => getcwd(),
+            'base_path'       => base_path(),
+            'db_database'     => DB::getDatabaseName(),
+        ];
     }
 }
