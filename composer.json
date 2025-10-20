@@ -1,0 +1,17 @@
+{
+  "name": "tetthys/sql-view",
+  "description": "Framework-agnostic SQL view base with optional Laravel adapter (PHP 8.3+).",
+  "type": "library",
+  "license": "MIT",
+  "autoload": {
+    "psr-4": {
+      "Tetthys\\SqlView\\": "src/"
+    }
+  },
+  "require": {
+    "php": "^8.3"
+  },
+  "suggest": {
+    "illuminate/database": "Enable Laravel adapter for DB::unprepared integration."
+  }
+}
