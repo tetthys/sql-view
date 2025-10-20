@@ -20,7 +20,8 @@ abstract class LaravelSqlView extends AbstractSqlView
     protected static function bootExecutor(): void
     {
         if (!static::$executor) {
-            static::setExecutor(static fn(string $sql): void => DB::unprepared($sql));
+            // Use DB::unprepared() but ignore its boolean return value
+            static::setExecutor(static fn(string $sql) => DB::unprepared($sql));
         }
     }
 
@@ -39,7 +40,7 @@ abstract class LaravelSqlView extends AbstractSqlView
     }
 
     // ---------------------------------------------------------------------
-    // Laravel utility methods
+    // Laravel-specific utility methods
     // ---------------------------------------------------------------------
 
     /** Drop this view if it exists. */
