@@ -68,7 +68,7 @@ abstract class ViewModel extends Model
     {
         $this->guardWrite('decrement');
     }
-    public function touch(array $with = null): never
+    public function touch($attribute = null): never
     {
         $this->guardWrite('touch');
     }
