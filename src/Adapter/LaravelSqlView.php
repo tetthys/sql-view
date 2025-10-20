@@ -9,10 +9,13 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
 use Tetthys\SqlView\AbstractSqlView;
+use Tetthys\SqlView\Support\SqlHelper;
 
 /**
  * Laravel adapter for SQL views (PHP 8.3+).
- * Provides additional Laravel-friendly helpers.
+ * - Uses base_path() to resolve SQL files.
+ * - Auto-wires DB::unprepared() as executor.
+ * - Provides Laravel-friendly helper methods.
  */
 abstract class LaravelSqlView extends AbstractSqlView
 {
@@ -20,7 +23,7 @@ abstract class LaravelSqlView extends AbstractSqlView
     protected static function bootExecutor(): void
     {
         if (!static::$executor) {
-            // Use DB::unprepared() but ignore its boolean return value
+            // Do not declare a void return type; DB::unprepared returns bool.
             static::setExecutor(static fn(string $sql) => DB::unprepared($sql));
         }
     }
@@ -39,6 +42,29 @@ abstract class LaravelSqlView extends AbstractSqlView
         parent::refresh();
     }
 
+    /** Resolve SQL via base_path() and perform :param substitution (Laravel-aware). */
+    #[\Override]
+    protected static function sql(): string
+    {
+        $path = base_path(static::SQL_FILE);
+
+        if (!is_file($path)) {
+            throw new \RuntimeException("SQL file not found: {$path}");
+        }
+
+        $sql = file_get_contents($path);
+        if ($sql === false) {
+            throw new \RuntimeException("Failed to read SQL file: {$path}");
+        }
+
+        // Naive :key => value substitution. Override if you need escaping/templating.
+        foreach (static::$params as $key => $value) {
+            $sql = str_replace(':' . $key, (string) $value, $sql);
+        }
+
+        return $sql;
+    }
+
     // ---------------------------------------------------------------------
     // Laravel-specific utility methods
     // ---------------------------------------------------------------------
@@ -47,7 +73,8 @@ abstract class LaravelSqlView extends AbstractSqlView
     public static function drop(): void
     {
         static::bootExecutor();
-        DB::statement('DROP VIEW IF EXISTS ' . static::q(static::name()));
+        $q = SqlHelper::quote(static::name());
+        DB::statement("DROP VIEW IF EXISTS {$q}");
     }
 
     /** Check whether this view exists in the current database. */
@@ -73,7 +100,7 @@ abstract class LaravelSqlView extends AbstractSqlView
         return static::query()->get();
     }
 
-    /** Dump resolved SQL content for inspection. */
+    /** Dump resolved SQL content for inspection (after param substitution). */
     public static function dumpSql(): string
     {
         $path = base_path(static::SQL_FILE);
@@ -89,10 +116,10 @@ abstract class LaravelSqlView extends AbstractSqlView
         return $sql;
     }
 
-    /** Run EXPLAIN SELECT * FROM view (MySQL). */
+    /** Run EXPLAIN SELECT * FROM view (MySQL only). */
     public static function explain(): array
     {
-        $rows = DB::select('EXPLAIN SELECT * FROM ' . static::q(static::name()));
+        $rows = DB::select('EXPLAIN SELECT * FROM ' . SqlHelper::quote(static::name()));
         return array_map(static fn($r) => (array) $r, $rows);
     }
 
